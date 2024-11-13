@@ -3,12 +3,12 @@
 ;	Boot1.asm
 ;		- A Simple Bootloader
 ;
-;	Operating Systems Development Series
+;	Operating Systems Development Tutorial
 ;*********************************************
 
 bits	16						; we are in 16 bit real mode
 
-org	0						; we will set regisers later
+org		0					; we will set regisers later
 
 start:	jmp	main					; jump to start of bootloader
 
@@ -19,14 +19,14 @@ start:	jmp	main					; jump to start of bootloader
 ; BPB Begins 3 bytes from start. We do a far jump, which is 3 bytes in size.
 ; If you use a short jump, add a "nop" after it to offset the 3rd byte.
 
-bpbOEM			db "My OS   "			; OEM identifier (Cannot exceed 8 bytes!)
+bpbOEM			db "My OS   "
 bpbBytesPerSector:  	DW 512
 bpbSectorsPerCluster: 	DB 1
 bpbReservedSectors: 	DW 1
 bpbNumberOfFATs: 	DB 2
 bpbRootEntries: 	DW 224
 bpbTotalSectors: 	DW 2880
-bpbMedia: 		DB 0xf0  ;; 0xF1
+bpbMedia: 		DB 0xf8  ;; 0xF1
 bpbSectorsPerFAT: 	DW 9
 bpbSectorsPerTrack: 	DW 18
 bpbHeadsPerCylinder: 	DW 2
@@ -52,6 +52,46 @@ Print:
 			jmp	Print			; Repeat until null terminator found
 	PrintDone:
 			ret				; we are done, so return
+
+
+absoluteSector db 0x00
+absoluteHead   db 0x00
+absoluteTrack  db 0x00
+
+;************************************************;
+; Convert CHS to LBA
+; LBA = (cluster - 2) * sectors per cluster
+;************************************************;
+
+ClusterLBA:
+          sub     ax, 0x0002                          ; zero base cluster number
+          xor     cx, cx
+          mov     cl, BYTE [bpbSectorsPerCluster]     ; convert byte to word
+          mul     cx
+          add     ax, WORD [datasector]               ; base data sector
+          ret
+
+;************************************************;
+; Convert LBA to CHS
+; AX=>LBA Address to convert
+;
+; absolute sector = (logical sector / sectors per track) + 1
+; absolute head   = (logical sector / sectors per track) MOD number of heads
+; absolute track  = logical sector / (sectors per track * number of heads)
+;
+;************************************************;
+
+LBACHS:
+          xor     dx, dx                              ; prepare dx:ax for operation
+          div     WORD [bpbSectorsPerTrack]           ; calculate
+          inc     dl                                  ; adjust for sector 0
+          mov     BYTE [absoluteSector], dl
+          xor     dx, dx                              ; prepare dx:ax for operation
+          div     WORD [bpbHeadsPerCylinder]          ; calculate
+          mov     BYTE [absoluteHead], dl
+          mov     BYTE [absoluteTrack], al
+          ret
+
 
 ;************************************************;
 ; Reads a series of sectors
@@ -95,39 +135,6 @@ ReadSectors:
           loop    .MAIN                               ; read next sector
           ret
 
-;************************************************;
-; Convert CHS to LBA
-; LBA = (cluster - 2) * sectors per cluster
-;************************************************;
-
-ClusterLBA:
-          sub     ax, 0x0002                          ; zero base cluster number
-          xor     cx, cx
-          mov     cl, BYTE [bpbSectorsPerCluster]     ; convert byte to word
-          mul     cx
-          add     ax, WORD [datasector]               ; base data sector
-          ret
-     
-;************************************************;
-; Convert LBA to CHS
-; AX=>LBA Address to convert
-;
-; absolute sector = (logical sector / sectors per track) + 1
-; absolute head   = (logical sector / sectors per track) MOD number of heads
-; absolute track  = logical sector / (sectors per track * number of heads)
-;
-;************************************************;
-
-LBACHS:
-          xor     dx, dx                              ; prepare dx:ax for operation
-          div     WORD [bpbSectorsPerTrack]           ; calculate
-          inc     dl                                  ; adjust for sector 0
-          mov     BYTE [absoluteSector], dl
-          xor     dx, dx                              ; prepare dx:ax for operation
-          div     WORD [bpbHeadsPerCylinder]          ; calculate
-          mov     BYTE [absoluteHead], dl
-          mov     BYTE [absoluteTrack], al
-          ret
 
 ;*********************************************
 ;	Bootloader Entry Point
@@ -305,18 +312,15 @@ main:
           mov     ah, 0x00
           int     0x16                                ; await keypress
           int     0x19                                ; warm boot computer
-     
-     absoluteSector db 0x00
-     absoluteHead   db 0x00
-     absoluteTrack  db 0x00
-     
+
+
      datasector  dw 0x0000
      cluster     dw 0x0000
      ImageName   db "KRNLDR  SYS"
-     msgLoading  db 0x0D, 0x0A, "Loading Boot Image", 0x0D, 0x0A, 0x00
+     msgLoading  db 0x0D, 0x0A, "Loading Boot Image ", 0x0D, 0x0A, 0x00
      msgCRLF     db 0x0D, 0x0A, 0x00
      msgProgress db ".", 0x00
-     msgFailure  db 0x0D, 0x0A, "ERROR : Press Any Key to Reboot", 0x0A, 0x00
+     msgFailure  db 0x0D, 0x0A, "MISSING OR CURRUPT KRNLDR. Press Any Key to Reboot", 0x0D, 0x0A, 0x00
      
           TIMES 510-($-$$) DB 0
           DW 0xAA55
